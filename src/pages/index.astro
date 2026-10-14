@@ -1,0 +1,91 @@
+---
+import Base from "../layouts/Base.astro";
+import catalog from "../data/catalog.json";
+import type { Catalog } from "../data/types";
+import { buildModel } from "../scripts/model";
+import { day, formatCount } from "../scripts/text";
+
+const model = buildModel(catalog as unknown as Catalog);
+const count = formatCount(model.entries.length);
+const updated = model.updated ? `Last updated ${day(model.updated)}` : "";
+---
+
+<Base
+  title="TCG Shop"
+  description="Canadian shops that sell or host events for trading card games, with the source for every game listed."
+>
+  <div class="wrap">
+    <main id="region">
+      <div class="bar">
+        <div class="btitle">
+          <h1 id="regionTitle" data-count={count}>TCG Canada<span>{count}</span></h1>
+          <p class="upd" id="updated">{updated}</p>
+        </div>
+        <div class="search" id="search" role="search">
+          <input id="q" type="text" role="searchbox" autocomplete="off" spellcheck="false" aria-label="Search shops, places and games" tabindex="-1" />
+          <button class="sbtn" type="button" id="sbtn" aria-label="Search" aria-expanded="false" aria-controls="q">
+            <svg class="ic-s" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><circle cx="11" cy="11" r="7"></circle><path d="m20 20-3.5-3.5"></path></svg>
+            <svg class="ic-x" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+          </button>
+        </div>
+      </div>
+      <p class="sr" id="live" aria-live="polite"></p>
+      <div class="list" id="list"><div class="head" id="head"></div><div id="out"></div><div id="sentinel" aria-hidden="true"></div></div>
+    </main>
+    <footer><p>&copy; 2026 TCG Shop. All rights reserved.</p></footer>
+  </div>
+
+  <div class="overlay" id="overlay" hidden>
+    <div class="pop" role="dialog" aria-modal="true" aria-labelledby="popName" tabindex="-1">
+      <div class="phead">
+        <div class="ptitle"><h3 id="popName"></h3><p class="kind" id="popKind"></p></div>
+        <button class="close" type="button" id="close" aria-label="Close">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18M6 6l12 12"></path></svg>
+        </button>
+      </div>
+      <div class="pbody" id="popBody"></div>
+    </div>
+  </div>
+  <script>
+    import type { CatalogPart, Entry, Model } from "../scripts/model";
+
+    function showLoadError(): void {
+      const head = document.getElementById("head");
+      const out = document.getElementById("out");
+      const live = document.getElementById("live");
+      if (head) head.hidden = true;
+      if (out) out.innerHTML = '<p class="empty">The shop list didn\'t load. Refresh the page to try again.</p>';
+      if (live) live.textContent = "The shop list didn't load.";
+    }
+
+    const worker = new Worker(new URL("../scripts/catalog.worker.ts", import.meta.url), { type: "module" });
+    const model = new Promise<Model>((resolve, reject) => {
+      let meta: Omit<Model, "entries" | "locsById"> | undefined;
+      const entries: Entry[] = [];
+      const fail = () => reject(new Error("catalog"));
+      worker.addEventListener("error", fail, { once: true });
+      worker.addEventListener("messageerror", fail, { once: true });
+      worker.addEventListener("message", (event: MessageEvent<CatalogPart>) => {
+        const part = event.data;
+        if (part.kind === "meta") meta = part.model;
+        else if (part.kind === "chunk") entries.push(...part.entries);
+        else if (meta) {
+          const locsById: Model["locsById"] = {};
+          for (const entry of entries) for (const location of entry.locs) locsById[location.id] = location;
+          resolve({ ...meta, entries, locsById });
+        } else fail();
+      });
+    });
+    // Paint the title before the app module is fetched or the shop list is built.
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+    await new Promise((resolve) => requestAnimationFrame(() => resolve(undefined)));
+    try {
+      const [{ start }, ready] = await Promise.all([import("../scripts/app"), model]);
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      start(ready);
+    } catch {
+      showLoadError();
+    }
+    worker.terminate();
+  </script>
+</Base>

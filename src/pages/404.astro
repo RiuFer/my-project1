@@ -1,0 +1,11 @@
+---
+import Base from "../layouts/Base.astro";
+---
+
+<Base title="Page not found" description="This page is not part of the TCG shop directory.">
+  <main class="wrap">
+    <h1 id="regionTitle">Page not found</h1>
+    <p class="upd">That address is not in this directory.</p>
+    <p><a href={import.meta.env.BASE_URL}>Back to the shops</a></p>
+  </main>
+</Base>
